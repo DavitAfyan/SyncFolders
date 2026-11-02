@@ -6,7 +6,7 @@ internal static class Program
 {
     private static async Task<int> Main(string[] args)
     {
-        if (args.Any(a => a is "-h" or "--help" or "-?"))
+        if (OptionsParser.WantsHelp(args))
         {
             Console.WriteLine(OptionsParser.Usage);
             return 0;
@@ -42,12 +42,20 @@ internal static class Program
             // Ctrl+C and SIGTERM both end the loop after the current file
             ConsoleCancelEventHandler onCancelKey = (_, e) =>
             {
+                if (cts.IsCancellationRequested)
+                {
+                    return;
+                }
                 e.Cancel = true;
                 cts.Cancel();
             };
             Console.CancelKeyPress += onCancelKey;
             using PosixSignalRegistration onTerminate = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context =>
             {
+                if (cts.IsCancellationRequested)
+                {
+                    return;
+                }
                 context.Cancel = true;
                 cts.Cancel();
             });
@@ -69,3 +77,4 @@ internal static class Program
         }
     }
 }
+

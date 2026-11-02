@@ -168,9 +168,20 @@ public sealed class FolderSynchronizer
         else
         {
             // For a link this removes the link itself (NOT what it points to)
+            bool isFolder = entry is DirectoryInfo;
             entry.Delete();
-            _log.Info($"Deleted file: {relative}");
-            result.FilesDeleted++;
+
+            if (isFolder)
+            {
+                _log.Info($"Deleted folder: {relative}");
+                result.DirectoriesDeleted++;
+            }
+            else
+            {
+                _log.Info($"Deleted file: {relative}");
+                result.FilesDeleted++;
+            }
+
         }
     }
 
@@ -240,7 +251,7 @@ public sealed class FolderSynchronizer
         {
             step();
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _log.Error($"Could not synchronize '{relative}': {ex.Message}");
             result.Errors++;

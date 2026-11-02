@@ -12,14 +12,36 @@ public static class OptionsParser
           --source    Folder to copy from. Must exist.
           --replica   Folder that is made identical to the source. Created if missing.
                       Anything in it that is not in the source gets deleted.
-          --interval  Seconds to wait between two synchronizations (whole number, 1 or more).
+          --interval  Seconds to wait between two synchronizations (whole number, 1 to 2592000).
           --log       Log file. Everything that is logged is also printed to the console.
           -h, --help  Show this text.
 
         Both "--name value" and "--name=value" are accepted.
         """;
 
+    // 30 days. Task.Delay can't wait longer than about 49 days, and nobody needs a longer pause
+    private const int MaxIntervalSeconds = 2_592_000;
+
     private static readonly string[] KnownOptions = { "source", "replica", "interval", "log" };
+
+    // True if the user asked for help. "-h" and "-?" are only looked at where an option could start
+    // so they still work as values (for example a log file called "-h")
+    public static bool WantsHelp(string[] args)
+    {
+        for (int i = 0; i < args.Length; i++)
+        {
+            string arg = args[i];
+            if (arg is "-h" or "--help" or "-?")
+            {
+                return true;
+            }
+            if (arg.StartsWith("--", StringComparison.Ordinal) && !arg.Contains('='))
+            {
+                i++; // the next argument is this option's value
+            }
+        }
+        return false;
+    }
 
     public static SyncOptions Parse(string[] args)
     {
@@ -42,7 +64,7 @@ public static class OptionsParser
             throw new UsageException($"Source folder '{options.SourcePath}' does not exist.");
         }
 
-        // The replica is wiped to match the source, so these two must never overlap.
+        // The replica is wiped to match the source, so these two must never overlap
         if (PathUtil.IsSameOrInside(options.ReplicaPath, options.SourcePath))
         {
             throw new UsageException("Replica folder must not be the source folder or inside it.");
@@ -105,6 +127,14 @@ public static class OptionsParser
                 {
                     throw new UsageException($"Option --{name} needs a value.");
                 }
+
+                string next = args[i + 1];
+                if (next.StartsWith("--", StringComparison.Ordinal))
+                {
+                    throw new UsageException(
+                        $"Option --{name} needs a value, but the next argument is '{next}'. " +
+                        $"If the value really starts with '--', write --{name}=<value>.");
+                }
                 value = args[++i];
             }
 
@@ -136,10 +166,13 @@ public static class OptionsParser
 
     private static TimeSpan ParseInterval(string text)
     {
-        if (!int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out int seconds) || seconds < 1)
+        if (!int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out int seconds)
+            || seconds < 1 || seconds > MaxIntervalSeconds)
         {
-            throw new UsageException($"--interval must be a whole number of seconds, 1 or more (got '{text}').");
+            throw new UsageException(
+                $"--interval must be a whole number of seconds from 1 to {MaxIntervalSeconds} (got '{text}').");
         }
         return TimeSpan.FromSeconds(seconds);
     }
 }
+

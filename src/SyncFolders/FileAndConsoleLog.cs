@@ -44,9 +44,17 @@ public sealed class FileAndConsoleLog : ILog, IDisposable
     {
         lock (_gate)
         {
-            _file.Dispose();
+            try
+            {
+                _file.Dispose();
+            }
+            catch (IOException)
+            {
+                // Flushing can fail if the disk went away
+            }
         }
     }
+
 
     // Core write method
     private void Write(string level, string message, TextWriter console)
@@ -56,7 +64,15 @@ public sealed class FileAndConsoleLog : ILog, IDisposable
 
         lock (_gate)
         {
-            console.WriteLine(line);
+            try
+            {
+                console.WriteLine(line);
+            }
+            catch (IOException)
+            {
+                // Closed stdout or a broken pipe. The file log is still worth keeping.
+            }
+
 
             try
             {
