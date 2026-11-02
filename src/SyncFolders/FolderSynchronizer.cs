@@ -107,15 +107,11 @@ public sealed class FolderSynchronizer
             _log.Info($"Copied file: {relative}");
             result.FilesCopied++;
         }
-        else
+        else if (!HasSameContent(source, target))
         {
-            // check if content changed
-            if (HasSameContent(source, target))
-            {
-                CopyFile(source, targetPath);
-                _log.Info($"Updated file: {relative}");
-                result.FilesUpdated++;
-            }
+            CopyFile(source, targetPath);
+            _log.Info($"Updated file: {relative}");
+            result.FilesUpdated++;
         }
     }
 

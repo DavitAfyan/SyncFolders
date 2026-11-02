@@ -1,5 +1,4 @@
-﻿using System.Reflection.Metadata;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace FolderSync;
 
@@ -7,19 +6,7 @@ internal static class Program
 {
     private static async Task<int> Main(string[] args)
     {
-        // check for help flags first so we don't do unnecessary work
-        // TODO: Check if '-?' is actually valid in linux
-        bool wantsHelp = false;
-        foreach (var arg in args)
-        {
-            if (arg == "-h" || arg == "--help" || arg == "-?")
-            {
-                wantsHelp = true;
-                break;
-            }
-        }
-
-        if (wantsHelp)
+        if (args.Any(a => a is "-h" or "--help" or "-?"))
         {
             Console.WriteLine(OptionsParser.Usage);
             return 0;
@@ -32,19 +19,18 @@ internal static class Program
         }
         catch (UsageException ex)
         {
-            // printing errors to stderr
-            Console.Error.WriteLine("Error: " + ex.Message);
+            Console.Error.WriteLine($"Error: {ex.Message}");
             Console.Error.WriteLine();
             Console.Error.WriteLine(OptionsParser.Usage);
-            return 2; // exit code 2 for bad args
+            return 2;
         }
 
-        FileAndConsoleLog log = null; // had to pull this out of the using statement to handle init errors nicely
+        FileAndConsoleLog log;
         try
         {
             log = new FileAndConsoleLog(options.LogPath);
         }
-        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             Console.Error.WriteLine($"Error: cannot open the log file '{options.LogPath}': {ex.Message}");
             return 2;
@@ -53,48 +39,32 @@ internal static class Program
         using (log)
         using (var cts = new CancellationTokenSource())
         {
-            // Ctrl+C and SIGTERM (docker stop, systemd) both end the loop after the current file
-            // Note: I remember running into issues with docker stop not triggering this properly, 
-            // but the PosixSignalRegistration below seems to fix it.
+            // Ctrl+C and SIGTERM both end the loop after the current file
             ConsoleCancelEventHandler onCancelKey = (_, e) =>
             {
                 e.Cancel = true;
                 cts.Cancel();
             };
             Console.CancelKeyPress += onCancelKey;
-
-            PosixSignalRegistration onTerminate = null;
-            try
+            using PosixSignalRegistration onTerminate = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context =>
             {
-                onTerminate = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context =>
-                {
-                    context.Cancel = true;
-                    cts.Cancel();
-                });
-            }
-            catch
-            {
-                // sometimes this throws on Windows, so just catch and ignore
-            }
+                context.Cancel = true;
+                cts.Cancel();
+            });
 
             try
             {
-                log.Info("Synchronizing '" + options.SourcePath + "' to '" + options.ReplicaPath + "' every " + options.Interval.TotalSeconds + " s. Press Ctrl+C to stop.");
+                log.Info($"Synchronizing '{options.SourcePath}' to '{options.ReplicaPath}' every {options.Interval.TotalSeconds:0} s. Press Ctrl+C to stop.");
 
                 var synchronizer = new FolderSynchronizer(options.SourcePath, options.ReplicaPath, log);
                 await SyncLoop.RunAsync(synchronizer, options.Interval, log, cts.Token);
 
                 log.Info("Stopped.");
-
-                // clean up the posix thing if it was created
-                onTerminate?.Dispose();
-
                 return 0;
             }
             finally
             {
                 Console.CancelKeyPress -= onCancelKey;
-                onTerminate?.Dispose();
             }
         }
     }
